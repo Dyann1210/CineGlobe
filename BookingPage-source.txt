@@ -1,0 +1,1059 @@
+﻿
+import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import {
+  ArrowLeft, CalendarDays, MapPin, Clock, Ticket,
+  Armchair, CheckCircle2, CreditCard, LoaderCircle,
+  Film, AlertCircle
+} from "lucide-react";
+import "./BookingPage.css";
+
+const API = "http://localhost:5000/api";
+
+const formatMoney = (amount) =>
+  new Intl.NumberFormat("vi-VN").format(amount || 0) + "Ä‘";
+
+const getId = (value) => {
+  if (value && typeof value === "object") {
+    return String(value._id || value.id || "");
+  }
+  return String(value || "");
+};
+
+const formatDate = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const formatTime = (date) =>
+  new Date(date).toLocaleTimeString("vi-VN", {
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+
+function BookingPage() {
+  const params = useParams();
+  const navigate = useNavigate();
+
+  // Láº¥y movieId tá»« React Router hoáº·c trá»±c tiáº¿p tá»« URL.
+  // CÃ¡ch nÃ y xá»­ lÃ½ Ä‘Æ°á»£c trÆ°á»ng há»£p App.jsx dÃ¹ng startsWith().
+  const movieId = String(
+    params.movieId ||
+    window.location.pathname.split("/").filter(Boolean).pop() ||
+    ""
+  ).trim();
+
+  const [movie, setMovie] = useState(null);
+  const [cinemas, setCinemas] = useState([]);
+  const [cinemaId, setCinemaId] = useState("");
+  const [selectedDate, setSelectedDate] = useState(formatDate(new Date()));
+  const [showtimes, setShowtimes] = useState([]);
+  const [selectedShowtime, setSelectedShowtime] = useState(null);
+
+  const [room, setRoom] = useState(null);
+  const [seats, setSeats] = useState([]);
+  const [bookedSeatIds, setBookedSeatIds] = useState([]);
+  const [selectedSeats, setSelectedSeats] = useState([]);
+
+  const [paymentMethod, setPaymentMethod] = useState("momo");
+  const [promotionCode, setPromotionCode] = useState("");
+  const [promotionMessage, setPromotionMessage] = useState("");
+  const [promotionError, setPromotionError] = useState("");
+  const [promotionName, setPromotionName] = useState("");
+  const [applyingPromotion, setApplyingPromotion] = useState(false);
+  const [booking, setBooking] = useState(null);
+  const [tickets, setTickets] = useState([]);
+
+  const [loading, setLoading] = useState(true);
+  const [loadingShowtimes, setLoadingShowtimes] = useState(false);
+  const [loadingSeats, setLoadingSeats] = useState(false);
+  const [processing, setProcessing] = useState(false);
+  const [error, setError] = useState("");
+
+  const token = localStorage.getItem("cineglobeToken");
+
+  const selectedTotal = useMemo(
+    () => selectedSeats.reduce(
+      (sum, seat) => sum + Number(seat.price || 0), 0
+    ),
+    [selectedSeats]
+  );
+
+  const dates = useMemo(() => {
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = new Date();
+      date.setDate(date.getDate() + index);
+
+      return {
+        value: formatDate(date),
+        day: index === 0
+          ? "HÃ´m nay"
+          : date.toLocaleDateString("vi-VN", { weekday: "short" }),
+        number: date.getDate(),
+        month: date.getMonth() + 1
+      };
+    });
+  }, []);
+
+  // Táº¢I PHIM VÃ€ DANH SÃCH Ráº P
+  useEffect(() => {
+    if (!token) {
+      alert("Vui lÃ²ng Ä‘Äƒng nháº­p Ä‘á»ƒ Ä‘áº·t vÃ©.");
+      navigate("/login");
+      return;
+    }
+
+    if (!movieId) {
+      setError("KhÃ´ng láº¥y Ä‘Æ°á»£c mÃ£ phim tá»« Ä‘Æ°á»ng dáº«n. Vui lÃ²ng quay láº¡i trang chá»§ vÃ  chá»n phim.");
+      setLoading(false);
+      return;
+    }
+
+    const loadInitialData = async () => {
+      try {
+        setLoading(true);
+        setError("");
+
+        const [movieResponse, cinemaResponse] = await Promise.all([
+          fetch(`${API}/movies`),
+          fetch(`${API}/cinemas`)
+        ]);
+
+        if (!movieResponse.ok) {
+          throw new Error("KhÃ´ng thá»ƒ táº£i danh sÃ¡ch phim.");
+        }
+
+        if (!cinemaResponse.ok) {
+          throw new Error("KhÃ´ng thá»ƒ táº£i danh sÃ¡ch ráº¡p.");
+        }
+
+        const movieResult = await movieResponse.json();
+        const cinemaResult = await cinemaResponse.json();
+
+        const movieList = Array.isArray(movieResult)
+          ? movieResult
+          : movieResult.movies || movieResult.data || movieResult.results || [];
+
+        const cinemaList = Array.isArray(cinemaResult)
+          ? cinemaResult
+          : cinemaResult.cinemas || cinemaResult.data || cinemaResult.results || [];
+
+        const normalizedMovieId = String(movieId).trim();
+
+        const foundMovie = movieList.find(
+          (item) => getId(item).trim() === normalizedMovieId
+        );
+
+        console.log("Movie ID trÃªn URL:", normalizedMovieId);
+        console.log(
+          "Danh sÃ¡ch ID phim tá»« API:",
+          movieList.map((item) => getId(item))
+        );
+
+        if (!foundMovie) {
+          throw new Error(
+            "KhÃ´ng tÃ¬m tháº¥y phim nÃ y trong há»‡ thá»‘ng. Vui lÃ²ng quay láº¡i trang chá»§ vÃ  chá»n phim láº¡i."
+          );
+        }
+
+        setMovie(foundMovie);
+        setCinemas(cinemaList);
+
+        if (cinemaList.length > 0) {
+          setCinemaId(getId(cinemaList[0]));
+        } else {
+          setError("Hiá»‡n chÆ°a cÃ³ ráº¡p chiáº¿u phim nÃ o trong há»‡ thá»‘ng.");
+        }
+      } catch (err) {
+        console.error("Lá»—i táº£i dá»¯ liá»‡u Ä‘áº·t vÃ©:", err);
+        setError(err.message || "CÃ³ lá»—i khi táº£i dá»¯ liá»‡u.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadInitialData();
+  }, [movieId, navigate, token]);
+
+  // Táº¢I SUáº¤T CHIáº¾U
+  useEffect(() => {
+    if (!movieId || !cinemaId || booking) return;
+
+    const loadShowtimes = async () => {
+      try {
+        setLoadingShowtimes(true);
+        setError("");
+        setSelectedShowtime(null);
+        setSeats([]);
+        setSelectedSeats([]);
+        setRoom(null);
+
+        const params = new URLSearchParams({
+          movieId,
+          cinemaId,
+          date: selectedDate
+        });
+
+        const response = await fetch(`${API}/showtimes?${params}`);
+
+        if (!response.ok) {
+          throw new Error("KhÃ´ng thá»ƒ táº£i suáº¥t chiáº¿u.");
+        }
+
+        const result = await response.json();
+
+        const list = Array.isArray(result)
+          ? result
+          : result.showtimes || result.data || [];
+
+        setShowtimes(list);
+      } catch (err) {
+        console.error("Lá»—i táº£i suáº¥t chiáº¿u:", err);
+        setShowtimes([]);
+        setError(err.message || "KhÃ´ng thá»ƒ táº£i suáº¥t chiáº¿u.");
+      } finally {
+        setLoadingShowtimes(false);
+      }
+    };
+
+    loadShowtimes();
+  }, [movieId, cinemaId, selectedDate, booking]);
+
+  // CHá»ŒN SUáº¤T CHIáº¾U VÃ€ Táº¢I SÆ  Äá»’ GHáº¾
+  const chooseShowtime = async (showtime) => {
+    try {
+      setSelectedShowtime(showtime);
+      setSelectedSeats([]);
+      setSeats([]);
+      setRoom(null);
+      setBookedSeatIds([]);
+      setError("");
+      setLoadingSeats(true);
+
+      const roomId = getId(showtime.room);
+      const showtimeId = getId(showtime);
+
+      if (!roomId) {
+        throw new Error("Suáº¥t chiáº¿u chÆ°a Ä‘Æ°á»£c gÃ¡n phÃ²ng.");
+      }
+
+      const response = await fetch(
+        `${API}/seats/room/${roomId}?showtimeId=${showtimeId}`
+      );
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || "KhÃ´ng thá»ƒ táº£i sÆ¡ Ä‘á»“ gháº¿.");
+      }
+
+      setRoom(result.room);
+      setSeats(result.seats || []);
+      setBookedSeatIds((result.bookedSeatIds || []).map(getId));
+    } catch (err) {
+      console.error("Lá»—i táº£i gháº¿:", err);
+      setError(err.message || "KhÃ´ng thá»ƒ táº£i sÆ¡ Ä‘á»“ gháº¿.");
+    } finally {
+      setLoadingSeats(false);
+    }
+  };
+
+  // CHá»ŒN HOáº¶C Bá»Ž CHá»ŒN GHáº¾
+  const toggleSeat = (seat) => {
+    const seatId = getId(seat);
+
+    if (bookedSeatIds.includes(seatId)) return;
+
+    setSelectedSeats((current) => {
+      const exists = current.some((item) => getId(item) === seatId);
+
+      if (exists) {
+        return current.filter((item) => getId(item) !== seatId);
+      }
+
+      if (current.length >= 8) {
+        setError("Má»—i láº§n chá»‰ Ä‘Æ°á»£c chá»n tá»‘i Ä‘a 8 gháº¿.");
+        return current;
+      }
+
+      setError("");
+      return [...current, seat];
+    });
+  };
+
+  // Táº O ÄÆ N Äáº¶T VÃ‰
+  const createBooking = async () => {
+    if (!selectedShowtime || selectedSeats.length === 0) {
+      setError("Vui lÃ²ng chá»n suáº¥t chiáº¿u vÃ  Ã­t nháº¥t má»™t gháº¿.");
+      return;
+    }
+
+    try {
+      setProcessing(true);
+      setError("");
+
+      const response = await fetch(`${API}/bookings`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          showtimeId: getId(selectedShowtime),
+          seatIds: selectedSeats.map(getId)
+        })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || "KhÃ´ng thá»ƒ táº¡o Ä‘Æ¡n Ä‘áº·t vÃ©.");
+      }
+
+      const newBooking = result.booking || result.data;
+
+      if (!newBooking?._id) {
+        throw new Error("MÃ¡y chá»§ khÃ´ng tráº£ vá» thÃ´ng tin Ä‘Æ¡n Ä‘áº·t vÃ©.");
+      }
+
+      // Cáº­p nháº­t tráº¡ng thÃ¡i gháº¿ ngay khi Ä‘Æ¡n Ä‘Æ°á»£c táº¡o.
+// Gháº¿ Ä‘ang Ä‘Æ°á»£c giá»¯ sáº½ khÃ´ng cÃ²n hiá»ƒn thá»‹ lÃ  gháº¿ trá»‘ng.
+setBookedSeatIds((current) => [
+  ...new Set([
+    ...current,
+    ...selectedSeats.map((seat) => getId(seat))
+  ])
+]);
+
+setBooking(newBooking);
+    } catch (err) {
+      console.error("Lá»—i táº¡o Ä‘Æ¡n Ä‘áº·t vÃ©:", err);
+      setError(err.message || "KhÃ´ng thá»ƒ táº¡o Ä‘Æ¡n Ä‘áº·t vÃ©.");
+
+      if (selectedShowtime) {
+        chooseShowtime(selectedShowtime);
+      }
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  // AP DUNG MA KHUYEN MAI
+  const applyPromotion = async () => {
+    const code = promotionCode.trim().toUpperCase();
+
+    if (!booking?._id) {
+      setPromotionError("KhÃ´ng tÃ¬m tháº¥y Ä‘Æ¡n Ä‘áº·t vÃ©.");
+      return;
+    }
+
+    if (!code) {
+      setPromotionError("Vui lÃ²ng nháº­p mÃ£ khuyáº¿n mÃ£i.");
+      return;
+    }
+
+    if (Number(booking.discountAmount || 0) > 0) {
+      setPromotionError("ÄÆ¡n hÃ ng Ä‘Ã£ Ã¡p dá»¥ng mÃ£ khuyáº¿n mÃ£i.");
+      return;
+    }
+
+    try {
+      setApplyingPromotion(true);
+      setPromotionError("");
+      setPromotionMessage("");
+
+      const response = await fetch(`${API}/promotions/apply`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          bookingId: booking._id,
+          code
+        })
+      });
+
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          result.message || "KhÃ´ng thá»ƒ Ã¡p dá»¥ng mÃ£ khuyáº¿n mÃ£i."
+        );
+      }
+
+      if (result.booking) {
+        setBooking(result.booking);
+      } else {
+        setBooking((current) => ({
+          ...current,
+          discountAmount: Number(result.discountAmount || 0),
+          finalAmount: Number(
+            result.finalAmount ?? current.finalAmount
+          )
+        }));
+      }
+
+      setPromotionCode(code);
+      setPromotionName(result.promotion?.name || "");
+      setPromotionMessage(
+        result.message || "Ãp dá»¥ng mÃ£ khuyáº¿n mÃ£i thÃ nh cÃ´ng."
+      );
+    } catch (err) {
+      console.error("Lá»—i Ã¡p dá»¥ng khuyáº¿n mÃ£i:", err);
+      setPromotionError(
+        err.message || "KhÃ´ng thá»ƒ Ã¡p dá»¥ng mÃ£ khuyáº¿n mÃ£i."
+      );
+    } finally {
+      setApplyingPromotion(false);
+    }
+  };
+  // THANH TOÃN
+  const payBooking = async () => {
+    if (!booking?._id) return;
+
+    try {
+      setProcessing(true);
+      setError("");
+
+      const response = await fetch(`${API}/payments`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          bookingId: booking._id,
+          paymentMethod
+        })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          result.message || "KhÃ´ng thá»ƒ táº¡o giao dá»‹ch thanh toÃ¡n."
+        );
+      }
+
+      const newPayment = result.payment || result.data;
+
+      if (!newPayment?._id) {
+        throw new Error("KhÃ´ng nháº­n Ä‘Æ°á»£c thÃ´ng tin giao dá»‹ch.");
+      }
+
+      const confirmResponse = await fetch(
+        `${API}/payments/${newPayment._id}/demo-confirm`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+
+      const confirmResult = await confirmResponse.json();
+
+      if (!confirmResponse.ok) {
+        throw new Error(
+          confirmResult.message || "XÃ¡c nháº­n thanh toÃ¡n tháº¥t báº¡i."
+        );
+      }
+
+      setTickets(confirmResult.tickets || []);
+
+      setBooking((current) => ({
+        ...current,
+        status: "confirmed",
+        paymentStatus: "paid"
+      }));
+    } catch (err) {
+      console.error("Lá»—i thanh toÃ¡n:", err);
+      setError(err.message || "Thanh toÃ¡n tháº¥t báº¡i.");
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  
+const getSeatClass = (seat) => {
+  const seatId = getId(seat);
+
+  // Gháº¿ Ä‘Ã£ Ä‘Æ°á»£c Ä‘áº·t
+  if (bookedSeatIds.includes(seatId)) {
+    return "seat-booked";
+  }
+
+  // Gháº¿ ngÆ°á»i dÃ¹ng Ä‘ang chá»n
+  if (selectedSeats.some((item) => getId(item) === seatId)) {
+    return "seat-selected";
+  }
+
+  // Nháº­n diá»‡n loáº¡i gháº¿, khÃ´ng phÃ¢n biá»‡t chá»¯ hoa/thÆ°á»ng
+  const type = String(seat.seatType || "standard")
+    .toLowerCase()
+    .trim();
+
+  if (["vip", "premium"].includes(type)) {
+    return "seat-vip";
+  }
+
+  if (["couple", "sweetbox", "sweet-box", "sweet_box"].includes(type)) {
+    return "seat-couple";
+  }
+
+  return "seat-standard";
+};
+
+
+  // TRáº NG THÃI ÄANG Táº¢I
+  if (loading) {
+    return (
+      <div className="booking-loading">
+        <LoaderCircle className="spin" size={36} />
+        <p>Äang chuáº©n bá»‹ tráº£i nghiá»‡m Ä‘áº·t vÃ©...</p>
+      </div>
+    );
+  }
+
+  // KHÃ”NG TÃŒM THáº¤Y PHIM
+  if (!movie) {
+    return (
+      <div className="booking-page">
+        <div className="booking-error-page">
+          <AlertCircle size={40} />
+          <h2>KhÃ´ng thá»ƒ má»Ÿ trang Ä‘áº·t vÃ©</h2>
+          <p>{error || "KhÃ´ng tÃ¬m tháº¥y phim."}</p>
+          <Link to="/" className="booking-back-button">
+            <ArrowLeft size={17} /> Vá» trang chá»§
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const moviePoster =
+    movie.poster ||
+    movie.posterUrl ||
+    "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=600";
+
+  return (
+    <div className="booking-page">
+      <header className="booking-header">
+        <Link to="/" className="booking-brand">
+          <span className="booking-brand-icon">C</span>
+          Cine<span>Globe</span>
+        </Link>
+
+        <Link to="/" className="booking-back-button">
+          <ArrowLeft size={17} /> Quay láº¡i
+        </Link>
+      </header>
+
+      <main className="booking-container">
+        <div className="booking-heading">
+          <div>
+            <p className="booking-eyebrow">CINEGLOBE BOOKING</p>
+            <h1>Äáº·t vÃ© xem phim</h1>
+            <p>Chá»n ráº¡p, suáº¥t chiáº¿u vÃ  vá»‹ trÃ­ gháº¿ yÃªu thÃ­ch cá»§a báº¡n.</p>
+          </div>
+
+          <div className="booking-step-indicator">
+            <span className={booking ? "done" : "active"}>01</span>
+            <i />
+            <span className={booking ? "active" : ""}>02</span>
+            <i />
+            <span className={tickets.length ? "done" : ""}>03</span>
+          </div>
+        </div>
+
+        <section className="booking-movie-card">
+          <img src={moviePoster} alt={movie.title} />
+
+          <div className="booking-movie-info">
+            <span className="booking-movie-label">
+              <Film size={14} /> ÄANG CHá»ŒN PHIM
+            </span>
+            <h2>{movie.title}</h2>
+            <p>
+              {movie.duration || 120} phÃºt
+              {" â€¢ "}
+              {movie.ageRating || "Táº¥t cáº£ Ä‘á»™ tuá»•i"}
+            </p>
+            <div className="booking-genres">
+              {(movie.genres || []).slice(0, 3).map((genre) => (
+                <span key={genre}>{genre}</span>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {error && (
+          <div className="booking-alert">
+            <AlertCircle size={18} />
+            {error}
+            <button onClick={() => setError("")}>ÄÃ³ng</button>
+          </div>
+        )}
+
+        {!booking && (
+          <>
+            <section className="booking-section">
+              <div className="booking-section-title">
+                <span>01</span>
+                <div>
+                  <h2>Chá»n ráº¡p chiáº¿u</h2>
+                  <p>Lá»±a chá»n Ä‘á»‹a Ä‘iá»ƒm thuáº­n tiá»‡n cho báº¡n.</p>
+                </div>
+              </div>
+
+              <div className="cinema-options">
+                {cinemas.map((cinema) => (
+                  <button
+                    key={getId(cinema)}
+                    className={
+                      cinemaId === getId(cinema)
+                        ? "cinema-option active"
+                        : "cinema-option"
+                    }
+                    onClick={() => {
+                      setCinemaId(getId(cinema));
+                      setSelectedShowtime(null);
+                      setSelectedSeats([]);
+                    }}
+                  >
+                    <span className="cinema-option-icon">
+                      <MapPin size={20} />
+                    </span>
+                    <span>
+                      <strong>{cinema.name}</strong>
+                      <small>{cinema.address || cinema.city}</small>
+                    </span>
+                    {cinemaId === getId(cinema) && (
+                      <CheckCircle2 size={20} />
+                    )}
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section className="booking-section">
+              <div className="booking-section-title">
+                <span>02</span>
+                <div>
+                  <h2>Chá»n ngÃ y xem</h2>
+                  <p>Suáº¥t chiáº¿u trong 7 ngÃ y tiáº¿p theo.</p>
+                </div>
+              </div>
+
+              <div className="date-options">
+                {dates.map((date) => (
+                  <button
+                    key={date.value}
+                    className={
+                      selectedDate === date.value
+                        ? "date-option active"
+                        : "date-option"
+                    }
+                    onClick={() => {
+                      setSelectedDate(date.value);
+                      setSelectedShowtime(null);
+                      setSelectedSeats([]);
+                    }}
+                  >
+                    <small>{date.day}</small>
+                    <strong>{date.number}</strong>
+                    <small>ThÃ¡ng {date.month}</small>
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section className="booking-section">
+              <div className="booking-section-title">
+                <span>03</span>
+                <div>
+                  <h2>Chá»n suáº¥t chiáº¿u</h2>
+                  <p>Giá» chiáº¿u Ä‘Æ°á»£c cáº­p nháº­t tá»« há»‡ thá»‘ng.</p>
+                </div>
+              </div>
+
+              {loadingShowtimes ? (
+                <div className="booking-empty">
+                  <LoaderCircle className="spin" />
+                  Äang táº£i suáº¥t chiáº¿u...
+                </div>
+              ) : showtimes.length === 0 ? (
+                <div className="booking-empty">
+                  <CalendarDays size={30} />
+                  <strong>ChÆ°a cÃ³ suáº¥t chiáº¿u</strong>
+                  <p>HÃ£y thá»­ chá»n ngÃ y khÃ¡c hoáº·c ráº¡p khÃ¡c.</p>
+                </div>
+              ) : (
+                <div className="showtime-options">
+                  {showtimes.map((showtime) => (
+                    <button
+                      key={getId(showtime)}
+                      className={
+                        getId(selectedShowtime) === getId(showtime)
+                          ? "showtime-option active"
+                          : "showtime-option"
+                      }
+                      onClick={() => chooseShowtime(showtime)}
+                    >
+                      <Clock size={16} />
+                      <strong>{formatTime(showtime.startTime)}</strong>
+                      <small>{showtime.room?.name || "PhÃ²ng chiáº¿u"}</small>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            {selectedShowtime && (
+              <section className="booking-section seat-section">
+                <div className="booking-section-title">
+                  <span>04</span>
+                  <div>
+                    <h2>Chá»n gháº¿ ngá»“i</h2>
+                    <p>
+                      {room?.name || selectedShowtime.room?.name || "PhÃ²ng chiáº¿u"}
+                      {" â€¢ "}Tá»‘i Ä‘a 8 gháº¿ má»—i lÆ°á»£t.
+                    </p>
+                  </div>
+                </div>
+
+                {loadingSeats ? (
+                  <div className="booking-empty">
+                    <LoaderCircle className="spin" />
+                    Äang táº£i sÆ¡ Ä‘á»“ gháº¿...
+                  </div>
+                ) : (
+                  <>
+                   <div className="seat-legend">
+  <span><i className="legend-standard" /> Gháº¿ thÆ°á»ng</span>
+  <span><i className="legend-vip" /> Gháº¿ VIP</span>
+  <span><i className="legend-couple" /> Gháº¿ Ä‘Ã´i Sweetbox</span>
+  <span><i className="legend-selected" /> Äang chá»n</span>
+  <span><i className="legend-booked" /> ÄÃ£ Ä‘áº·t / Ä‘ang giá»¯</span>
+</div>
+
+                    <div className="screen-area">
+                      <div className="screen-shape"></div>
+                      <span>MÃ€N HÃŒNH</span>
+                    </div>
+
+                    <div className="seat-map">
+                      {["A", "B", "C", "D", "E", "F", "G", "H"].map((rowName) => {
+                        const rowSeats = seats.filter(
+                          (seat) => seat.row === rowName
+                        );
+
+                        if (!rowSeats.length) return null;
+
+                        return (
+                          <div className="seat-row" key={rowName}>
+                            <span className="seat-row-label">{rowName}</span>
+
+                            {rowSeats.map((seat) => {
+                              const isBooked = bookedSeatIds.includes(getId(seat));
+                              const isSelected = selectedSeats.some(
+                                (item) => getId(item) === getId(seat)
+                              );
+
+                              return (
+                                <button
+                                  key={getId(seat)}
+                                  title={`${seat.seatNumber || seat.number} - ${formatMoney(seat.price)}`}
+                                  disabled={isBooked}
+                                  className={`seat ${getSeatClass(seat)}`}
+                                  onClick={() => toggleSeat(seat)}
+                                >
+                                  <Armchair size={17} />
+                                  <small>{seat.number || seat.seatNumber}</small>
+                                  {isSelected && (
+                                    <CheckCircle2 className="seat-check" size={12} />
+                                  )}
+                                </button>
+                              );
+                            })}
+
+                            <span className="seat-row-label">{rowName}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                   <div className="seat-price-note">
+  <span>Gháº¿ thÆ°á»ng: 75.000Ä‘</span>
+  <span>Gháº¿ VIP: 100.000Ä‘</span>
+  <span>Gháº¿ Ä‘Ã´i: Theo giÃ¡ trong há»‡ thá»‘ng</span>
+</div>
+
+                    <div className="booking-summary">
+                      <div>
+                        <small>Gháº¿ Ä‘Ã£ chá»n</small>
+                        <strong>
+                          {selectedSeats.length
+                            ? selectedSeats.map((seat) => seat.seatNumber || seat.number).join(", ")
+                            : "ChÆ°a chá»n gháº¿"}
+                        </strong>
+                      </div>
+                      <div>
+                        <small>Tá»•ng tiá»n</small>
+                        <strong className="booking-total">
+                          {formatMoney(selectedTotal)}
+                        </strong>
+                      </div>
+                    </div>
+
+                    <button
+                      className="booking-primary-button"
+                      disabled={!selectedSeats.length || processing}
+                      onClick={createBooking}
+                    >
+                      {processing ? (
+                        <LoaderCircle className="spin" size={18} />
+                      ) : (
+                        <Ticket size={18} />
+                      )}
+                      XÃ¡c nháº­n chá»n gháº¿
+                    </button>
+                  </>
+                )}
+              </section>
+            )}
+          </>
+        )}
+
+        {booking && tickets.length === 0 && (
+          <section className="booking-section payment-section">
+            <div className="booking-section-title">
+              <span>05</span>
+              <div>
+                <h2>Thanh toÃ¡n vÃ©</h2>
+                <p>ÄÆ¡n Ä‘áº·t vÃ© Ä‘Ã£ Ä‘Æ°á»£c táº¡o. Chá»n phÆ°Æ¡ng thá»©c thanh toÃ¡n.</p>
+              </div>
+            </div>
+
+            <div className="payment-booking-info">
+              <div>
+                <small>MÃ£ Ä‘áº·t vÃ©</small>
+                <strong>{booking.bookingCode}</strong>
+              </div>
+              <div>
+                <small>Sá»‘ lÆ°á»£ng gháº¿</small>
+                <strong>{booking.totalSeats} gháº¿</strong>
+              </div>
+              <div>
+                <small>Tá»•ng thanh toÃ¡n</small>
+                <strong>{formatMoney(booking.finalAmount)}</strong>
+              </div>
+              <div>
+                <small>Thá»i háº¡n giá»¯ gháº¿</small>
+                <strong>10 phÃºt</strong>
+              </div>
+            </div>
+
+            <div className="promotion-apply-panel">
+              <div className="promotion-panel-heading">
+                <div className="promotion-panel-icon">
+                  <Ticket size={20} />
+                </div>
+                <div>
+                  <strong>MÃ£ khuyáº¿n mÃ£i</strong>
+                  <p>Nháº­p mÃ£ Æ°u Ä‘Ã£i Ä‘á»ƒ tiáº¿t kiá»‡m chi phÃ­ vÃ©.</p>
+                </div>
+              </div>
+
+              <div className="promotion-input-row">
+                <input
+                  type="text"
+                  value={promotionCode}
+                  onChange={(event) => {
+                    setPromotionCode(event.target.value.toUpperCase());
+                    setPromotionError("");
+                    setPromotionMessage("");
+                  }}
+                  placeholder="Nháº­p mÃ£ khuyáº¿n mÃ£i"
+                  disabled={
+                    applyingPromotion ||
+                    Number(booking.discountAmount || 0) > 0
+                  }
+                  maxLength={30}
+                />
+                <button
+                  type="button"
+                  onClick={applyPromotion}
+                  disabled={
+                    applyingPromotion ||
+                    Number(booking.discountAmount || 0) > 0
+                  }
+                >
+                  {applyingPromotion ? (
+                    <LoaderCircle className="spin" size={17} />
+                  ) : (
+                    "Ãp dá»¥ng"
+                  )}
+                </button>
+              </div>
+
+              {promotionError && (
+                <p className="promotion-feedback error">
+                  <AlertCircle size={16} />
+                  {promotionError}
+                </p>
+              )}
+
+              {promotionMessage && (
+                <p className="promotion-feedback success">
+                  <CheckCircle2 size={16} />
+                  {promotionMessage}
+                  {promotionName ? ` (${promotionName})` : ""}
+                </p>
+              )}
+
+              {Number(booking.discountAmount || 0) > 0 && (
+                <div className="promotion-applied-label">
+                  <CheckCircle2 size={16} />
+                  ÄÃ£ Ã¡p dá»¥ng mÃ£ {promotionCode}
+                </div>
+              )}
+            </div>
+
+            <div className="payment-price-summary">
+              <div>
+                <span>Táº¡m tÃ­nh</span>
+                <strong>{formatMoney(booking.totalAmount)}</strong>
+              </div>
+              <div className="promotion-discount-row">
+                <span>Giáº£m giÃ¡</span>
+                <strong>
+                  -{formatMoney(booking.discountAmount || 0)}
+                </strong>
+              </div>
+              <div className="payment-final-row">
+                <span>Tá»•ng thanh toÃ¡n</span>
+                <strong>{formatMoney(booking.finalAmount)}</strong>
+              </div>
+            </div>
+            <div className="payment-options">
+              {[
+                { value: "momo", title: "VÃ­ MoMo", description: "Thanh toÃ¡n mÃ´ phá»ng qua MoMo", icon: "M" },
+                { value: "vnpay", title: "VNPay", description: "Thanh toÃ¡n mÃ´ phá»ng qua VNPay", icon: "V" },
+                { value: "zalopay", title: "ZaloPay", description: "Thanh toÃ¡n mÃ´ phá»ng qua ZaloPay", icon: "Z" },
+                { value: "banking", title: "Chuyá»ƒn khoáº£n", description: "Thanh toÃ¡n mÃ´ phá»ng qua ngÃ¢n hÃ ng", icon: "B" },
+                { value: "cash", title: "Tiá»n máº·t", description: "PhÆ°Æ¡ng thá»©c thanh toÃ¡n demo", icon: "â‚«" }
+              ].map((method) => (
+                <button
+                  key={method.value}
+                  className={
+                    paymentMethod === method.value
+                      ? "payment-option active"
+                      : "payment-option"
+                  }
+                  onClick={() => setPaymentMethod(method.value)}
+                >
+                  <span className="payment-icon">{method.icon}</span>
+                  <span>
+                    <strong>{method.title}</strong>
+                    <small>{method.description}</small>
+                  </span>
+                  <span className="payment-radio">
+                    {paymentMethod === method.value && <CheckCircle2 size={18} />}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <div className="demo-payment-note">
+              <AlertCircle size={17} />
+              ÄÃ¢y lÃ  thanh toÃ¡n mÃ´ phá»ng phá»¥c vá»¥ Ä‘á»“ Ã¡n, chÆ°a káº¿t ná»‘i cá»•ng thanh toÃ¡n tháº­t.
+            </div>
+
+            <button
+              className="booking-primary-button"
+              disabled={processing}
+              onClick={payBooking}
+            >
+              {processing ? (
+                <LoaderCircle className="spin" size={18} />
+              ) : (
+                <CreditCard size={18} />
+              )}
+              Thanh toÃ¡n {formatMoney(booking.finalAmount)}
+            </button>
+          </section>
+        )}
+
+        {tickets.length > 0 && (
+          <section className="ticket-success-section">
+            <div className="ticket-success-icon">
+              <CheckCircle2 size={42} />
+            </div>
+            <p className="booking-eyebrow">PAYMENT SUCCESSFUL</p>
+            <h2>Äáº·t vÃ© thÃ nh cÃ´ng!</h2>
+            <p>VÃ© Ä‘iá»‡n tá»­ Ä‘Ã£ Ä‘Æ°á»£c táº¡o. HÃ£y xuáº¥t trÃ¬nh mÃ£ QR khi Ä‘áº¿n ráº¡p.</p>
+
+            <div className="digital-tickets">
+              {tickets.map((ticket) => (
+                <article className="digital-ticket" key={ticket._id}>
+                  <div className="digital-ticket-top">
+                    <div>
+                      <span>CINEGLOBE E-TICKET</span>
+                      <h3>{movie.title}</h3>
+                    </div>
+                    <Ticket size={25} />
+                  </div>
+
+                  <div className="digital-ticket-details">
+                    <div>
+                      <small>MÃƒ VÃ‰</small>
+                      <strong>{ticket.ticketCode}</strong>
+                    </div>
+                    <div>
+                      <small>GHáº¾</small>
+                      <strong>{ticket.seatNumber}</strong>
+                    </div>
+                    <div>
+                      <small>PHÃ’NG</small>
+                      <strong>{room?.name || selectedShowtime?.room?.name || "â€”"}</strong>
+                    </div>
+                  </div>
+
+                  {ticket.qrCode && (
+                    <img
+                      className="ticket-qr"
+                      src={ticket.qrCode}
+                      alt={`QR vÃ© ${ticket.ticketCode}`}
+                    />
+                  )}
+
+                  <p className="ticket-qr-caption">
+                    QuÃ©t mÃ£ QR táº¡i quáº§y soÃ¡t vÃ©
+                  </p>
+                </article>
+              ))}
+            </div>
+
+            <button
+              className="booking-primary-button"
+              onClick={() => navigate("/my-tickets")}
+            >
+              <Ticket size={18} /> Xem vÃ© cá»§a tÃ´i
+            </button>
+
+            <Link to="/" className="booking-home-link">
+              <ArrowLeft size={17} /> Quay vá» trang chá»§
+            </Link>
+          </section>
+        )}
+      </main>
+    </div>
+  );
+}
+
+export default BookingPage;
+

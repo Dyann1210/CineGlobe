@@ -1,0 +1,756 @@
+
+import { useEffect, useState } from "react";
+import { useLocation, useNavigate, Link } from "react-router-dom";
+import {
+  Search, Bell, UserRound, Home, Film, Ticket,
+  MessageCircle, ChevronRight, Play, Star, MapPin,
+  Sparkles, CalendarDays, X, LogOut, LogIn
+} from "lucide-react";
+
+import AuthPage from "./AuthPage";
+import BookingPage from "./BookingPage";
+import MyTickets from "./MyTickets";
+import ProfilePage from "./ProfilePage";
+import MovieDetailPage from "./MovieDetailPage";
+import GlobeAI from "./GlobeAI";
+import "./App.css";
+
+const API = "http://localhost:5000/api";
+
+const fallbackMovies = [
+  {
+    _id: "1",
+    title: "Dune: Part Two",
+    poster: "https://image.tmdb.org/t/p/w500/1pdfLvkbY9ohJlCjQH2CZjjYVvJ.jpg",
+    backdrop: "https://image.tmdb.org/t/p/original/xOMo8BRK7PfcJv9JCnx7s5hj0PX.jpg",
+    genres: ["Viễn tưởng", "Hành động"],
+    rating: 9.2,
+    duration: 166,
+    ageRating: "T16"
+  },
+  {
+    _id: "2",
+    title: "Interstellar",
+    poster: "https://image.tmdb.org/t/p/w500/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg",
+    genres: ["Khoa học viễn tưởng", "Drama"],
+    rating: 9.0,
+    duration: 169,
+    ageRating: "T13"
+  },
+  {
+    _id: "3",
+    title: "Avengers: Endgame",
+    poster: "https://image.tmdb.org/t/p/w500/or06FN3Dka5tukK1e9sl16pB3iy.jpg",
+    genres: ["Hành động", "Phiêu lưu"],
+    rating: 8.9,
+    duration: 181,
+    ageRating: "T13"
+  },
+  {
+    _id: "4",
+    title: "The Batman",
+    poster: "https://image.tmdb.org/t/p/w500/74xTEgt7R36Fpooo50r9T25onhq.jpg",
+    genres: ["Hành động", "Trinh thám"],
+    rating: 8.7,
+    duration: 176,
+    ageRating: "T16"
+  }
+];
+
+const genres = [
+  "Tất cả", "Hành động", "Hài", "Drama",
+  "Trinh thám", "Tình cảm", "Viễn tưởng", "Kinh dị"
+];
+
+function App() {
+  const location = useLocation();
+
+  // Trang đăng nhập, đăng ký và quên mật khẩu
+  if (["/login", "/register", "/forgot-password"].includes(location.pathname)) {
+    return <AuthPage />;
+  }
+
+  // Trang tài khoản thành viên
+  if (location.pathname === "/account") {
+    return <ProfilePage />;
+  }
+
+  // Trang vé của tôi
+  if (location.pathname === "/my-tickets") {
+    return <MyTickets />;
+  }
+
+  // Trang đặt vé
+  if (location.pathname.startsWith("/booking/")) {
+    return <BookingPage />;
+  }
+
+  // Trang chi tiết phim
+  if (location.pathname.startsWith("/movie/")) {
+    return <MovieDetailPage />;
+  }
+
+  // Trang chủ
+  return <HomePage />;
+}
+
+function HomePage() {
+  const navigate = useNavigate();
+
+  const [movies, setMovies] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [selectedGenre, setSelectedGenre] = useState("Tất cả");
+  const [activeTab, setActiveTab] = useState("Trang chủ");
+  const [showSearch, setShowSearch] = useState(false);
+  const [selectedMovie, setSelectedMovie] = useState(null);
+  const [isGlobeOpen, setIsGlobeOpen] = useState(false);
+  const [city, setCity] = useState("Biên Hòa, Đồng Nai");
+
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("cineglobeUser")) || null;
+    } catch {
+      return null;
+    }
+  });
+
+  // Tải danh sách phim
+  useEffect(() => {
+    const fetchMovies = async () => {
+      try {
+        const response = await fetch(`${API}/movies`);
+
+        if (!response.ok) {
+          throw new Error("Không tải được phim");
+        }
+
+        const result = await response.json();
+
+        const list = Array.isArray(result)
+          ? result
+          : result.movies || result.data || result.results || [];
+
+        setMovies(list.length ? list : fallbackMovies);
+      } catch (error) {
+        console.error("Lỗi tải phim:", error);
+        setMovies(fallbackMovies);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchMovies();
+  }, []);
+
+  // Lọc phim
+  const filteredMovies = movies.filter((movie) => {
+    const title = (movie.title || movie.name || "").toLowerCase();
+
+    const matchesSearch = title.includes(search.toLowerCase());
+
+    const movieGenres = movie.genres || [];
+
+    const matchesGenre =
+      selectedGenre === "Tất cả" ||
+      movieGenres.some((genre) =>
+        String(genre).toLowerCase().includes(selectedGenre.toLowerCase())
+      );
+
+    return matchesSearch && matchesGenre;
+  });
+
+  const featuredMovie = movies[0] || fallbackMovies[0];
+
+  const getPoster = (movie) =>
+    movie.poster ||
+    movie.posterUrl ||
+    "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=600";
+
+  const getRating = (movie) => movie.rating || 8.8;
+
+  // Đăng xuất
+  const handleLogout = () => {
+    localStorage.removeItem("cineglobeToken");
+    localStorage.removeItem("cineglobeUser");
+
+    setCurrentUser(null);
+    navigate("/");
+  };
+
+  // Mở trang tài khoản
+  const openAccount = () => {
+    if (!localStorage.getItem("cineglobeToken")) {
+      navigate("/login");
+      return;
+    }
+
+    navigate("/account");
+  };
+
+  // Đặt vé
+  const handleBooking = (movie) => {
+    if (!localStorage.getItem("cineglobeToken")) {
+      alert("Vui lòng đăng nhập trước khi đặt vé!");
+      navigate("/login");
+      return;
+    }
+
+    navigate(`/booking/${movie._id}`);
+  };
+
+  // Xem vé của tôi
+  const openMyTickets = () => {
+    if (!localStorage.getItem("cineglobeToken")) {
+      alert("Vui lòng đăng nhập để xem vé của bạn!");
+      navigate("/login");
+      return;
+    }
+
+    navigate("/my-tickets");
+  };
+
+  // Mở Globe AI
+  const openGlobeAI = () => {
+    setActiveTab("AI Chat");
+    setIsGlobeOpen(true);
+  };
+
+  const navItems = [
+    { name: "Trang chủ", icon: Home },
+    { name: "Tìm kiếm", icon: Search },
+    { name: "AI Chat", icon: MessageCircle },
+    { name: "Vé của tôi", icon: Ticket },
+    { name: "Cá nhân", icon: UserRound }
+  ];
+
+  return (
+    <div className="cine-app">
+
+      {/* CINEMA MARQUEE */}
+      <div className="cinema-marquee">
+        <div className="marquee-track">
+
+          <div className="marquee-group">
+            <span>
+              <Sparkles size={15} />
+              CINEGLOBE - ỨNG DỤNG ĐẶT VÉ XEM PHIM
+            </span>
+
+            <span className="marquee-separator">✦</span>
+
+            <span>
+              <Ticket size={15} />
+              XIN CHÀO QUÝ KHÁCH ĐẾN VỚI CINEGLOBE
+            </span>
+
+            <span className="marquee-separator">✦</span>
+
+            <span>
+              <Film size={15} />
+              KHÁM PHÁ NHỮNG BỘ PHIM ĐẶC SẮC MỚI NHẤT
+            </span>
+
+            <span className="marquee-separator">✦</span>
+
+            <span>
+              <Star size={15} />
+              ĐẶT VÉ NHANH CHÓNG - CHỌN GHẾ YÊU THÍCH
+            </span>
+
+            <span className="marquee-separator">✦</span>
+
+            <span>
+              <Sparkles size={15} />
+              CHÚC QUÝ KHÁCH CÓ NHỮNG PHÚT GIÂY XEM PHIM TUYỆT VỜI
+            </span>
+          </div>
+
+          {/* Bản sao để tạo hiệu ứng chạy liên tục */}
+          <div className="marquee-group" aria-hidden="true">
+            <span>
+              <Sparkles size={15} />
+              CINEGLOBE - ỨNG DỤNG ĐẶT VÉ XEM PHIM
+            </span>
+
+            <span className="marquee-separator">✦</span>
+
+            <span>
+              <Ticket size={15} />
+              XIN CHÀO QUÝ KHÁCH ĐẾN VỚI CINEGLOBE
+            </span>
+
+            <span className="marquee-separator">✦</span>
+
+            <span>
+              <Film size={15} />
+              KHÁM PHÁ NHỮNG BỘ PHIM ĐẶC SẮC MỚI NHẤT
+            </span>
+
+            <span className="marquee-separator">✦</span>
+
+            <span>
+              <Star size={15} />
+              ĐẶT VÉ NHANH CHÓNG - CHỌN GHẾ YÊU THÍCH
+            </span>
+
+            <span className="marquee-separator">✦</span>
+
+            <span>
+              <Sparkles size={15} />
+              CHÚC QUÝ KHÁCH CÓ NHỮNG PHÚT GIÂY XEM PHIM TUYỆT VỜI
+            </span>
+          </div>
+
+        </div>
+      </div>
+
+      {/* HEADER */}
+      <header className="topbar">
+        <Link className="brand" to="/">
+          <span className="brand-icon">C</span>
+          <span>Cine<span>Globe</span></span>
+        </Link>
+
+        <nav className="desktop-nav">
+          {navItems.slice(0, 4).map((item) => (
+            <button
+              key={item.name}
+              className={activeTab === item.name ? "nav-link active" : "nav-link"}
+              onClick={() => {
+                setActiveTab(item.name);
+
+                if (item.name === "Tìm kiếm") {
+                  setShowSearch(true);
+
+                  document.getElementById("home")?.scrollIntoView({
+                    behavior: "smooth"
+                  });
+                }
+
+                if (item.name === "Vé của tôi") {
+                  openMyTickets();
+                }
+
+                if (item.name === "AI Chat") {
+                  openGlobeAI();
+                }
+              }}
+            >
+              {item.name}
+            </button>
+          ))}
+        </nav>
+
+        <div className="topbar-actions">
+          <button
+            className="icon-button"
+            onClick={() => setShowSearch(!showSearch)}
+          >
+            <Search size={19} />
+          </button>
+
+          <button className="icon-button notification-button">
+            <Bell size={19} />
+            <span></span>
+          </button>
+
+          {currentUser ? (
+            <div className="profile-actions">
+              <button
+                className="profile-button"
+                onClick={openAccount}
+              >
+                <UserRound size={17} />
+                <span>{currentUser.fullName || "Tài khoản"}</span>
+              </button>
+
+              <button
+                className="icon-button"
+                title="Đăng xuất"
+                onClick={handleLogout}
+              >
+                <LogOut size={18} />
+              </button>
+            </div>
+          ) : (
+            <button
+              className="profile-button"
+              onClick={() => navigate("/login")}
+            >
+              <LogIn size={17} />
+              <span>Đăng nhập</span>
+            </button>
+          )}
+        </div>
+      </header>
+
+      {/* MAIN */}
+      <main id="home" className="main-content">
+
+        <section className="welcome-row">
+          <div>
+            <p className="eyebrow">CINEGLOBE EXPERIENCE</p>
+
+            <h1>
+              {currentUser
+                ? `Xin chào, ${currentUser.fullName}!`
+                : "Chào mừng đến CineGlobe"}
+              <span> 👋</span>
+            </h1>
+
+            <p className="welcome-subtitle">
+              Khám phá thế giới điện ảnh theo cách của bạn.
+            </p>
+          </div>
+
+          <button
+            className="location-pill"
+            onClick={() =>
+              setCity(
+                city === "Biên Hòa, Đồng Nai"
+                  ? "Sài Gòn"
+                  : "Biên Hòa, Đồng Nai"
+              )
+            }
+          >
+            <MapPin size={16} />
+            {city}
+            <ChevronRight size={15} />
+          </button>
+        </section>
+
+        {/* SEARCH */}
+        {showSearch && (
+          <div className="search-box">
+            <Search size={19} />
+
+            <input
+              autoFocus
+              placeholder="Tìm kiếm phim bạn yêu thích..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+
+            <button
+              onClick={() => {
+                setSearch("");
+                setShowSearch(false);
+              }}
+            >
+              <X size={18} />
+            </button>
+          </div>
+        )}
+
+        {/* HERO */}
+        <section className="hero-section">
+          <div
+            className="hero-backdrop"
+            style={{
+              backgroundImage: `linear-gradient(90deg, #080d1b 4%, rgba(8,13,27,.92) 35%, rgba(8,13,27,.15) 100%), url(${featuredMovie.backdrop || getPoster(featuredMovie)})`
+            }}
+          ></div>
+
+          <div className="hero-content">
+            <div className="match-label">
+              <Sparkles size={14} /> MUST WATCH
+            </div>
+
+            <p className="hero-kicker">PHIM NỔI BẬT TUẦN NÀY</p>
+
+            <h2>{featuredMovie.title || "Dune: Part Two"}</h2>
+
+            <div className="hero-meta">
+              <span className="rating">
+                <Star size={15} fill="currentColor" />
+                {getRating(featuredMovie)}
+              </span>
+
+              <span>{featuredMovie.duration || 166} phút</span>
+
+              <span className="age-label">
+                {featuredMovie.ageRating || "T16"}
+              </span>
+            </div>
+
+            <p className="hero-description">
+              Trải nghiệm hành trình điện ảnh đầy cảm xúc với hình ảnh mãn nhãn,
+              âm thanh sống động và câu chuyện khó quên.
+            </p>
+
+            <div className="hero-buttons">
+              <button
+                className="primary-button"
+                onClick={() => handleBooking(featuredMovie)}
+              >
+                <Ticket size={17} /> Đặt vé ngay
+              </button>
+
+              <button
+                className="outline-button"
+                onClick={() => navigate(`/movie/${featuredMovie._id}`)}
+              >
+                <Play size={17} /> Chi tiết phim
+              </button>
+            </div>
+          </div>
+
+          <div className="hero-indicator">
+            <span className="indicator-active"></span>
+            <span></span>
+            <span></span>
+          </div>
+        </section>
+
+        {/* AI BANNER */}
+        <section className="ai-banner">
+          <div className="ai-avatar">
+            <Sparkles size={25} />
+          </div>
+
+          <div className="ai-copy">
+            <div className="ai-title">
+              AI CineGlobe <span>BETA</span>
+            </div>
+
+            <p>Để AI gợi ý bộ phim phù hợp với tâm trạng của bạn.</p>
+          </div>
+
+          <button onClick={openGlobeAI}>
+            Trò chuyện <ChevronRight size={16} />
+          </button>
+        </section>
+
+        {/* MOVIES */}
+        <section className="movie-section">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">MOVIE COLLECTION</p>
+              <h2>Phim đang chiếu</h2>
+            </div>
+
+            <button
+              className="see-all"
+              onClick={() => {
+                setShowSearch(true);
+
+                document.getElementById("home")?.scrollIntoView({
+                  behavior: "smooth"
+                });
+              }}
+            >
+              Xem tất cả <ChevronRight size={17} />
+            </button>
+          </div>
+
+          <div className="genre-list">
+            {genres.map((genre) => (
+              <button
+                key={genre}
+                className={
+                  selectedGenre === genre
+                    ? "genre-chip selected"
+                    : "genre-chip"
+                }
+                onClick={() => setSelectedGenre(genre)}
+              >
+                {genre}
+              </button>
+            ))}
+          </div>
+
+          {loading ? (
+            <div className="loading-state">
+              Đang tải danh sách phim...
+            </div>
+          ) : (
+            <div className="movie-grid">
+              {filteredMovies.map((movie) => (
+                <article className="movie-card" key={movie._id}>
+                  <button
+                    className="poster-button"
+                    onClick={() => navigate(`/movie/${movie._id}`)}
+                  >
+                    <img src={getPoster(movie)} alt={movie.title} />
+
+                    <span className="poster-age">
+                      {movie.ageRating || "T16"}
+                    </span>
+
+                    <span className="poster-play">
+                      <Play size={20} fill="white" />
+                    </span>
+                  </button>
+
+                  <div className="movie-info">
+                    <h3>{movie.title}</h3>
+
+                    <div className="movie-rating">
+                      <Star size={14} fill="currentColor" />
+                      {getRating(movie)}
+                      <span> • {movie.duration || 120} phút</span>
+                    </div>
+
+                    <p>
+                      {(movie.genres || ["Điện ảnh"])
+                        .slice(0, 2)
+                        .join(" • ")}
+                    </p>
+
+                    <button
+                      className="book-small"
+                      onClick={() => handleBooking(movie)}
+                    >
+                      Đặt vé
+                    </button>
+                  </div>
+                </article>
+              ))}
+
+              {filteredMovies.length === 0 && (
+                <p className="empty-state">
+                  Không tìm thấy phim phù hợp.
+                </p>
+              )}
+            </div>
+          )}
+        </section>
+
+        {/* COMING SOON */}
+        <section className="coming-section">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">COMING SOON</p>
+              <h2>Phim sắp khởi chiếu</h2>
+            </div>
+
+            <CalendarDays size={22} className="heading-icon" />
+          </div>
+
+          <div className="coming-card">
+            <div className="coming-art">
+              <Film size={38} />
+            </div>
+
+            <div>
+              <h3>Những siêu phẩm sắp xuất hiện</h3>
+              <p>Đừng bỏ lỡ các bộ phim mới nhất tại CineGlobe.</p>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      {/* FOOTER */}
+      <footer className="site-footer">
+        <div className="brand">
+          <span className="brand-icon">C</span>
+          <span>Cine<span>Globe</span></span>
+        </div>
+
+        <p>Thế giới điện ảnh trong tầm tay bạn.</p>
+
+        <span>© 2026 CineGlobe</span>
+      </footer>
+
+      {/* MOBILE NAV */}
+      <nav className="mobile-nav">
+        {navItems.map((item) => {
+          const Icon = item.icon;
+
+          return (
+            <button
+              key={item.name}
+              className={
+                activeTab === item.name
+                  ? "mobile-nav-item active"
+                  : "mobile-nav-item"
+              }
+              onClick={() => {
+                setActiveTab(item.name);
+
+                if (item.name === "Tìm kiếm") {
+                  setShowSearch(true);
+                }
+
+                if (item.name === "Vé của tôi") {
+                  openMyTickets();
+                }
+
+                if (item.name === "Cá nhân") {
+                  openAccount();
+                }
+
+                if (item.name === "AI Chat") {
+                  openGlobeAI();
+                }
+              }}
+            >
+              <Icon size={21} />
+              <span>{item.name}</span>
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* MOVIE DETAIL MODAL */}
+      {selectedMovie && (
+        <div
+          className="modal-overlay"
+          onClick={() => setSelectedMovie(null)}
+        >
+          <div
+            className="movie-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              className="modal-close"
+              onClick={() => setSelectedMovie(null)}
+            >
+              <X size={20} />
+            </button>
+
+            <img
+              src={getPoster(selectedMovie)}
+              alt={selectedMovie.title}
+            />
+
+            <div className="modal-info">
+              <p className="eyebrow">CINEGLOBE MOVIE</p>
+
+              <h2>{selectedMovie.title}</h2>
+
+              <p>
+                <Star size={15} fill="currentColor" />
+                {" "}{getRating(selectedMovie)}
+                {" • "}{selectedMovie.duration || 120} phút
+              </p>
+
+              <p>
+                {selectedMovie.description ||
+                  "Khám phá bộ phim hấp dẫn này tại hệ thống rạp CineGlobe."}
+              </p>
+
+              <button
+                className="primary-button"
+                onClick={() => handleBooking(selectedMovie)}
+              >
+                <Ticket size={17} /> Chọn suất chiếu
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* GLOBE AI CHAT */}
+      <GlobeAI
+        open={isGlobeOpen}
+        onOpen={() => setIsGlobeOpen(true)}
+        onClose={() => setIsGlobeOpen(false)}
+      />
+
+    </div>
+  );
+}
+
+export default App;

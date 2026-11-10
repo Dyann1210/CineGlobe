@@ -1,0 +1,261 @@
+
+.ap-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  color: #25243a;
+}
+
+.ap-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.ap-eyebrow {
+  color: #7c3aed;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+}
+
+.ap-heading h2 {
+  margin: 7px 0;
+  font-size: 26px;
+  font-weight: 800;
+}
+
+.ap-heading p {
+  color: #858398;
+  margin: 0;
+  font-size: 14px;
+}
+
+.ap-refresh {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 17px;
+  border: 1px solid #e8e5f0;
+  border-radius: 12px;
+  background: white;
+  color: #6840bd;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ap-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 15px;
+}
+
+.ap-stat {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 20px;
+  border: 1px solid #eeeaf5;
+  border-radius: 17px;
+  background: white;
+  box-shadow: 0 5px 20px #30205b08;
+}
+
+.ap-stat-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+}
+
+.ap-stat-icon svg {
+  width: 21px;
+}
+
+.ap-stat-icon.purple { background: #f0eaff; color: #7c3aed; }
+.ap-stat-icon.green { background: #e6f8ef; color: #15965b; }
+.ap-stat-icon.orange { background: #fff3df; color: #db8b18; }
+.ap-stat-icon.blue { background: #e7f1ff; color: #3478d4; }
+
+.ap-stat small,
+.ap-stat strong {
+  display: block;
+}
+
+.ap-stat small {
+  color: #89869b;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.ap-stat strong {
+  font-size: 19px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.ap-panel {
+  background: white;
+  border: 1px solid #eeeaf5;
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: 0 5px 20px #30205b08;
+}
+
+.ap-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 18px;
+  border-bottom: 1px solid #f0edf5;
+}
+
+.ap-search {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: 1;
+  min-width: 220px;
+  padding: 0 13px;
+  border: 1px solid #e9e6f0;
+  border-radius: 11px;
+  color: #938ca5;
+}
+
+.ap-search input {
+  width: 100%;
+  min-width: 0;
+  height: 42px;
+  border: 0;
+  outline: 0;
+  color: #28243a;
+}
+
+.ap-toolbar select {
+  min-width: 155px;
+  padding: 0 12px;
+  border: 1px solid #e9e6f0;
+  border-radius: 11px;
+  background: white;
+  color: #514b63;
+  outline: none;
+}
+
+.ap-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.ap-table {
+  width: 100%;
+  border-collapse: collapse;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.ap-table th {
+  padding: 15px;
+  text-align: left;
+  color: #89859a;
+  background: #faf9fc;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+}
+
+.ap-table td {
+  padding: 16px 15px;
+  border-top: 1px solid #f1eef5;
+  color: #555166;
+}
+
+.ap-table td strong,
+.ap-table td small {
+  display: block;
+}
+
+.ap-table td small {
+  margin-top: 5px;
+  color: #9691a4;
+}
+
+.ap-code {
+  color: #7041bd;
+}
+
+.ap-money {
+  color: #15965b !important;
+  font-weight: 800;
+}
+
+.ap-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 9px;
+  border-radius: 30px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.ap-status.success { background: #e6f8ef; color: #15965b; }
+.ap-status.pending { background: #fff3df; color: #c17b13; }
+.ap-status.failed { background: #ffebeb; color: #d54b4b; }
+.ap-status.refunded { background: #eaf1ff; color: #4774c4; }
+
+.ap-empty {
+  min-height: 230px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #9691a4;
+}
+
+.ap-empty strong {
+  color: #4b465c;
+}
+
+.ap-empty p {
+  margin: 0;
+  font-size: 13px;
+}
+
+.ap-error {
+  padding: 13px 18px;
+  color: #c03939;
+  background: #fff0f0;
+}
+
+.ap-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 15px 18px;
+  border-top: 1px solid #f0edf5;
+  color: #89859a;
+  font-size: 12px;
+}
+
+.ap-spin {
+  animation: ap-rotate 1s linear infinite;
+}
+
+@keyframes ap-rotate {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 900px) {
+  .ap-stats { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 600px) {
+  .ap-heading { align-items: flex-start; flex-direction: column; }
+  .ap-stats { grid-template-columns: 1fr; }
+  .ap-toolbar { flex-direction: column; }
+  .ap-toolbar select { min-height: 42px; }
+  .ap-footer { flex-direction: column; }
+}

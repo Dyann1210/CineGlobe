@@ -1,0 +1,281 @@
+﻿const crypto = require("crypto");
+
+const Booking = require("../models/Booking");
+const Showtime = require("../models/Showtime");
+const Seat = require("../models/Seat");
+const Notification = require("../models/Notification");
+
+// TẠO ĐƠN ĐẶT VÉ VÀ GIỮ GHẾ
+const createBooking = async (req, res) => {
+    try {
+        const { showtimeId, seatIds } = req.body;
+
+        if (
+            !showtimeId ||
+            !Array.isArray(seatIds) ||
+            seatIds.length === 0
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "Vui lòng chọn suất chiếu và ít nhất một ghế."
+            });
+        }
+
+        if (seatIds.length > 8) {
+            return res.status(400).json({
+                success: false,
+                message: "Mỗi lần chỉ được đặt tối đa 8 ghế."
+            });
+        }
+
+        const uniqueSeatIds = [
+            ...new Set(seatIds.map(id => String(id)))
+        ];
+
+        if (uniqueSeatIds.length !== seatIds.length) {
+            return res.status(400).json({
+                success: false,
+                message: "Danh sách ghế có ghế bị trùng."
+            });
+        }
+
+        const showtime = await Showtime.findById(showtimeId);
+
+        if (
+            !showtime ||
+            showtime.status !== "scheduled" ||
+            new Date(showtime.startTime) <= new Date()
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "Suất chiếu không tồn tại hoặc không còn khả dụng."
+            });
+        }
+
+        // Kiểm tra ghế có thuộc đúng phòng chiếu không.
+        const seats = await Seat.find({
+            _id: { $in: uniqueSeatIds },
+            room: showtime.room,
+            isActive: true
+        });
+
+        if (seats.length !== uniqueSeatIds.length) {
+            return res.status(400).json({
+                success: false,
+                message: "Một số ghế không hợp lệ hoặc không thuộc phòng chiếu."
+            });
+        }
+
+        const now = new Date();
+
+        // Kiểm tra ghế đã được xác nhận hoặc đang được giữ.
+        const existingBookings = await Booking.find({
+            showtime: showtimeId,
+            $or: [
+                { status: "confirmed" },
+                {
+                    status: "pending",
+                    expiresAt: { $gt: now }
+                }
+            ],
+            "seats.seat": { $in: uniqueSeatIds }
+        }).select("bookingCode seats status expiresAt");
+
+        if (existingBookings.length > 0) {
+            const conflictingSeats = existingBookings.flatMap(booking =>
+                (booking.seats || [])
+                    .filter(item =>
+                        uniqueSeatIds.includes(
+                            String(item.seat?._id || item.seat)
+                        )
+                    )
+                    .map(item => item.seatNumber)
+            );
+
+            return res.status(409).json({
+                success: false,
+                message: conflictingSeats.length
+                    ? `Ghế ${conflictingSeats.join(", ")} đã có người đặt hoặc đang được giữ. Vui lòng chọn ghế khác.`
+                    : "Một hoặc nhiều ghế đã được người khác đặt. Vui lòng chọn ghế khác."
+            });
+        }
+
+        // Tính tiền theo giá của từng ghế trong database.
+        const bookingSeats = seats.map(seat => ({
+            seat: seat._id,
+            seatNumber: seat.seatNumber,
+            price: Number(seat.price || showtime.price || 0)
+        }));
+
+        const totalAmount = bookingSeats.reduce(
+            (total, seat) => total + seat.price,
+            0
+        );
+
+        const bookingCode =
+            "CG" +
+            Date.now().toString() +
+            crypto.randomBytes(3).toString("hex").toUpperCase();
+
+        // Giữ ghế trong 10 phút.
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+        const booking = await Booking.create({
+            bookingCode,
+            user: req.user._id,
+            showtime: showtime._id,
+            movie: showtime.movie,
+            cinema: showtime.cinema,
+            room: showtime.room,
+            seats: bookingSeats,
+            totalSeats: bookingSeats.length,
+            totalAmount,
+            discountAmount: 0,
+            finalAmount: totalAmount,
+            status: "pending",
+            paymentStatus: "unpaid",
+            expiresAt
+        });
+
+        // Tạo thông báo đặt vé
+        try {
+            await Notification.create({
+                user: req.user._id,
+                title: "Đặt vé thành công!",
+                message: `Đơn ${booking.bookingCode} đã được tạo. Ghế được giữ trong 10 phút, vui lòng thanh toán đúng hạn.`,
+                type: "booking",
+                relatedId: booking._id
+            });
+        } catch (notificationError) {
+            console.error("Create booking notification error:", notificationError);
+        }
+        return res.status(201).json({
+            success: true,
+            message: "Tạo đơn thành công. Ghế đã được giữ trong 10 phút.",
+            booking
+        });
+
+    } catch (error) {
+        console.error("createBooking error:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Không thể tạo đơn đặt vé.",
+            error: error.message
+        });
+    }
+};
+
+// LẤY LỊCH SỬ ĐẶT VÉ CỦA NGƯỜI DÙNG
+const getMyBookings = async (req, res) => {
+    try {
+        const bookings = await Booking.find({
+            user: req.user._id
+        })
+            .populate("movie", "title poster duration")
+            .populate("cinema", "name address")
+            .populate("showtime", "startTime endTime")
+            .populate("room", "name roomType")
+            .sort({ createdAt: -1 });
+
+        return res.status(200).json({
+            success: true,
+            total: bookings.length,
+            bookings
+        });
+
+    } catch (error) {
+        console.error("getMyBookings error:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Không thể lấy lịch sử đặt vé.",
+            error: error.message
+        });
+    }
+};
+
+// XEM CHI TIẾT ĐƠN ĐẶT VÉ
+const getBookingById = async (req, res) => {
+    try {
+        const booking = await Booking.findOne({
+            _id: req.params.id,
+            user: req.user._id
+        })
+            .populate("movie")
+            .populate("cinema")
+            .populate("showtime")
+            .populate("room")
+            .populate("seats.seat");
+
+        if (!booking) {
+            return res.status(404).json({
+                success: false,
+                message: "Không tìm thấy đơn đặt vé."
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            booking
+        });
+
+    } catch (error) {
+        console.error("getBookingById error:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Không thể lấy thông tin đơn đặt vé.",
+            error: error.message
+        });
+    }
+};
+
+// HỦY ĐƠN CHƯA THANH TOÁN
+const cancelBooking = async (req, res) => {
+    try {
+        const booking = await Booking.findOne({
+            _id: req.params.id,
+            user: req.user._id
+        });
+
+        if (!booking) {
+            return res.status(404).json({
+                success: false,
+                message: "Không tìm thấy đơn đặt vé."
+            });
+        }
+
+        if (booking.status !== "pending") {
+            return res.status(400).json({
+                success: false,
+                message: "Chỉ có thể hủy đơn đang chờ thanh toán."
+            });
+        }
+
+        booking.status = "cancelled";
+        await booking.save();
+
+        return res.status(200).json({
+            success: true,
+            message: "Đã hủy đơn đặt vé thành công.",
+            booking
+        });
+
+    } catch (error) {
+        console.error("cancelBooking error:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Không thể hủy đơn đặt vé.",
+            error: error.message
+        });
+    }
+};
+
+module.exports = {
+    createBooking,
+    getMyBookings,
+    getBookingById,
+    cancelBooking
+};

@@ -1,0 +1,246 @@
+﻿
+const crypto = require("crypto");
+
+const Payment = require("../models/Payment");
+const Booking = require("../models/Booking");
+const Promotion = require("../models/Promotion");
+const Notification = require("../models/Notification");
+const { createTicketsForBooking } = require("./ticketController");
+
+// TẠO GIAO DỊCH THANH TOÁN
+const createPayment = async (req, res) => {
+    try {
+        const { bookingId, paymentMethod } = req.body;
+
+        const allowedMethods = [
+            "cash",
+            "momo",
+            "vnpay",
+            "zalopay",
+            "banking"
+        ];
+
+        if (!bookingId || !paymentMethod) {
+            return res.status(400).json({
+                success: false,
+                message: "Vui lòng cung cấp mã đặt vé và phương thức thanh toán."
+            });
+        }
+
+        if (!allowedMethods.includes(paymentMethod)) {
+            return res.status(400).json({
+                success: false,
+                message: "Phương thức thanh toán không hợp lệ."
+            });
+        }
+
+        const booking = await Booking.findOne({
+            _id: bookingId,
+            user: req.user._id
+        });
+
+        if (!booking) {
+            return res.status(404).json({
+                success: false,
+                message: "Không tìm thấy đơn đặt vé."
+            });
+        }
+
+        if (booking.status !== "pending") {
+            return res.status(400).json({
+                success: false,
+                message: "Đơn đặt vé không còn hợp lệ để thanh toán."
+            });
+        }
+
+        if (booking.expiresAt && booking.expiresAt <= new Date()) {
+            booking.status = "expired";
+            await booking.save();
+
+            return res.status(400).json({
+                success: false,
+                message: "Đơn đặt vé đã hết thời gian thanh toán."
+            });
+        }
+
+        // Không tạo thêm giao dịch nếu đã có giao dịch đang chờ
+        const existingPayment = await Payment.findOne({
+            booking: booking._id,
+            user: req.user._id,
+            status: "pending"
+        });
+
+        if (existingPayment) {
+            existingPayment.paymentMethod = paymentMethod;
+            await existingPayment.save();
+
+            return res.status(200).json({
+                success: true,
+                message: "Đã tìm thấy giao dịch thanh toán đang chờ.",
+                payment: existingPayment
+            });
+        }
+
+        const transactionCode =
+            "CGPAY" +
+            Date.now() +
+            crypto.randomBytes(3).toString("hex").toUpperCase();
+
+        const payment = await Payment.create({
+            booking: booking._id,
+            user: req.user._id,
+            transactionCode,
+            paymentMethod,
+            amount: booking.finalAmount,
+            status: "pending",
+            description: `Thanh toán đơn đặt vé ${booking.bookingCode}`
+        });
+
+        return res.status(201).json({
+            success: true,
+            message: "Tạo giao dịch thanh toán thành công.",
+            payment
+        });
+
+    } catch (error) {
+        console.error("Create payment error:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Không thể tạo giao dịch thanh toán.",
+            error: error.message
+        });
+    }
+};
+
+// XÁC NHẬN THANH TOÁN MÔ PHỎNG
+const confirmDemoPayment = async (req, res) => {
+    try {
+        const payment = await Payment.findOne({
+            _id: req.params.id,
+            user: req.user._id
+        });
+
+        if (!payment) {
+            return res.status(404).json({
+                success: false,
+                message: "Không tìm thấy giao dịch."
+            });
+        }
+
+        if (payment.status !== "pending") {
+            return res.status(400).json({
+                success: false,
+                message: "Giao dịch không còn ở trạng thái chờ thanh toán."
+            });
+        }
+
+        const booking = await Booking.findOne({
+            _id: payment.booking,
+            user: req.user._id
+        });
+
+        if (!booking || booking.status !== "pending") {
+            return res.status(400).json({
+                success: false,
+                message: "Đơn đặt vé không còn hợp lệ."
+            });
+        }
+
+        if (booking.expiresAt && booking.expiresAt <= new Date()) {
+            booking.status = "expired";
+            await booking.save();
+
+            payment.status = "failed";
+            await payment.save();
+
+            return res.status(400).json({
+                success: false,
+                message: "Đơn đặt vé đã hết thời gian thanh toán."
+            });
+        }
+
+        // Xác nhận thanh toán mô phỏng
+        payment.status = "success";
+        payment.paidAt = new Date();
+        await payment.save();
+
+        // Cập nhật đơn đặt vé
+        booking.status = "confirmed";
+        booking.paymentStatus = "paid";
+        await booking.save();
+
+        // Tự động tạo vé điện tử và mã QR
+        const tickets = await createTicketsForBooking(booking);
+
+        // Tang luot su dung ma sau khi thanh toan thanh cong.
+        if (booking.promotion) {
+            await Promotion.updateOne(
+                { _id: booking.promotion },
+                { $inc: { usageCount: 1 } }
+            );
+        }
+
+        try {
+            await Notification.create({
+                user: req.user._id,
+                title: "Thanh toán thành công!",
+                message: `Đơn ${booking.bookingCode} đã được thanh toán. Vé điện tử và mã QR đã sẵn sàng trong mục Vé của tôi.`,
+                type: "payment",
+                relatedId: booking._id
+            });
+        } catch (notificationError) {
+            console.error("Lỗi tạo thông báo thanh toán:", notificationError);
+        }
+        return res.status(200).json({
+            success: true,
+            message: "Thanh toán thành công! Vé điện tử và mã QR đã được tạo.",
+            payment,
+            booking,
+            tickets
+        });
+
+    } catch (error) {
+        console.error("Confirm demo payment error:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Không thể xác nhận thanh toán hoặc tạo vé.",
+            error: error.message
+        });
+    }
+};
+
+// LẤY LỊCH SỬ THANH TOÁN
+const getMyPayments = async (req, res) => {
+    try {
+        const payments = await Payment.find({
+            user: req.user._id
+        })
+            .populate("booking", "bookingCode finalAmount status")
+            .sort({ createdAt: -1 });
+
+        return res.status(200).json({
+            success: true,
+            total: payments.length,
+            payments
+        });
+
+    } catch (error) {
+        console.error("Get payments error:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Không thể lấy lịch sử thanh toán.",
+            error: error.message
+        });
+    }
+};
+
+module.exports = {
+    createPayment,
+    confirmDemoPayment,
+    getMyPayments
+};
+
+
